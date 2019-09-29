@@ -9,7 +9,7 @@ My knowledge of AES is a mix from wikipedia, "Introduction to Cryptography by Ch
 
 For testing I used Test vectors in original paper for key schedule:
 
->>"Advanced Encryption Standard (AES)" (PDF). Federal Information Processing Standards. 26 November 2001. doi:10.6028/NIST.FIPS.197.
+>"Advanced Encryption Standard (AES)" (PDF). Federal Information Processing Standards. 26 November 2001. doi:10.6028/NIST.FIPS.197.
 
 Everything else was tested by test vectors on wikipedia pages.
 
