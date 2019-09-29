@@ -6,20 +6,19 @@
 
 using namespace std;
 
-// TODO, fix scope error occuring when trying to access expanded_key after expand_key
+void encrypt(byte plain_text[], int plain_text_size);
+void decrypt(byte cipher_text[], int cipher_text_size);
 
 // AES Layers
 void sub_bytes(byte[], int);
 void shift_rows(byte[16]);
 void mix_cols(byte[16]);
 void add_key(byte[], byte[]);
+
 void inv_sub_bytes(byte[], int);
 void inv_shift_rows(byte[16]);
 void inv_mix_cols(byte[16]);
-
-// TODO
-void encrypt(byte plaintext[], byte key[], int plain_text_size, int key_size);
-
+void inv_add_key(byte[], byte[]);
 
 // Helper
 byte gf2_mul(byte,byte); // GF(2^m) algebra
@@ -27,65 +26,73 @@ uint32_t g(const uint32_t&);
 void expand_key(byte expanded_key[],byte key[]); // Key schedule
 
 // Debuging use
-void print_block(const byte[]);
+void print_bytes(const byte[], int);
 
 // Globals
 int key_size;
+byte expanded_key[240]; // makes space assuming 256-bit key
 
 int main(int argc, char** argv){
 
-    if (argc == 4){
+    // Test: aes 128 2b7e151628aed2a6abf7158809cf4f3c 3243f6a8885a308d313198a2e0370734
+    if (argc == 5){
 
-        key_size = atoi(argv[1]);
+        // Encrypt or decrypt
+        bool flag_e = argv[1][1] == 'e';
 
-        // Get key
+        key_size = atoi(argv[2]);
+
+        // Get key and expand it.
         byte key[key_size/8];
 
         for (int i=0; i<key_size/8; i++){
 
-            char temp[2] = {argv[2][2*i], argv[2][2*i+1]};
+            char temp[2] = {argv[3][2*i], argv[3][2*i+1]};
             key[i] = stoi(temp, nullptr, 16);
         }
 
-        // Get plain text
-        long long plain_text_size = strlen(argv[3])/2;
+        expand_key(expanded_key, key);
 
-        byte plain_text[plain_text_size];
-        for (int i=0; i<plain_text_size; i++){
+        // Get text
+        long long text_size = strlen(argv[4])/2;
 
-            char temp[3] = {argv[3][2*i], argv[3][2*i+1], '\0'};
-            plain_text[i] = stoi(temp, nullptr, 16);
+        byte text[text_size];
+        for (int i=0; i<text_size; i++){
+
+            char temp[3] = {argv[4][2*i], argv[4][2*i+1], '\0'};
+            text[i] = stoi(temp, nullptr, 16);
         }
 
-        // Encrypt
-        encrypt(plain_text, key, plain_text_size, key_size);
+        // Process
+        if (flag_e){
 
-        for(int i=0; i<plain_text_size; i++){
-            cout << hex << (int) plain_text[i];
+            encrypt(text, text_size);
+            print_bytes(text, text_size);
+
+        } else {
+
+            decrypt(text, text_size);
+            print_bytes(text, text_size);
+
         }
-        cout << endl;
 
     } else {
-        cout << "Please use: aes <key_len(bits)> <key> <encrypt>" << endl;
+        cout << "Please use: aes <-e/-d> <128/192/256> <key> <text>" << endl;
     }
-
 
     return 0;
 }
 
-void encrypt(byte plain_text[], byte key[], int plain_text_size, int key_size){
+void encrypt(byte plain_text[], int plain_text_size){
 
-    byte rounds = key_size/32 + 7;  // no. of round
-
-    byte expanded_key[key_size/64*(key_size/32+7)];
-    expand_key(expanded_key, key);
+    byte Rounds = key_size/32 + 7;  // no. of round
 
     for(int block=0; block<plain_text_size; block+=16){
 
         // key whitening
         add_key(expanded_key, &plain_text[block]);
 
-        for(int round=1; round<rounds-1; round++){
+        for(int round=1; round<Rounds-1; round++){
 
             sub_bytes(&plain_text[block], 16);
             shift_rows(&plain_text[block]);
@@ -97,6 +104,32 @@ void encrypt(byte plain_text[], byte key[], int plain_text_size, int key_size){
         sub_bytes(&plain_text[block], 16);
         shift_rows(&plain_text[block]);
         add_key(expanded_key, &plain_text[block]);
+
+    }
+
+}
+
+void decrypt(byte cipher_text[], int cipher_text_size){
+
+    byte Rounds = key_size/32 + 7;  // no. of round
+
+    for(int block=0; block<cipher_text_size; block+=16){
+
+        // First decryption round
+        inv_add_key(expanded_key, &cipher_text[block]);
+        inv_shift_rows(&cipher_text[block]);
+        inv_sub_bytes(&cipher_text[block], 16);
+
+        for(int round=1; round<Rounds-1; round++){
+
+            inv_add_key(expanded_key, &cipher_text[block]);
+            inv_mix_cols(&cipher_text[block]);
+            inv_shift_rows(&cipher_text[block]);
+            inv_sub_bytes(&cipher_text[block], 16);
+        }
+
+        // decrypt key whitening
+        inv_add_key(expanded_key, &cipher_text[block]);
 
     }
 
@@ -185,7 +218,7 @@ void add_key(byte expanded_key[],byte block[]){
     for (int i=0; i<16; i++){
         block[i] ^= expanded_key[16*round+i];
     }
-    round += 1;
+    round++;
 }
 
 void inv_sub_bytes(byte block[], int len=16){
@@ -248,6 +281,14 @@ void inv_mix_cols(byte block[16]){
     }
 }
 
+void inv_add_key(byte expanded_key[],byte block[]){
+    static byte round = key_size/32+6;
+    for (int i=0; i<16; i++){
+        block[i] ^= expanded_key[16*round+i];
+    }
+    round--;
+}
+
 
 
 // Helper
@@ -258,20 +299,21 @@ byte gf2_mul(byte a, byte b){
 
     // Irreducible polynomial for AES, x^8+ x^4 + x^3 + x + 1
     static const uint16_t IRR = 0b100011011; // 0x11b
+    uint16_t A = a;
 
     byte ans = 0;
 
     // until b is 0
     while(b){
 
-        // add if bit 0 of b is 1
-        if (b & 1) ans ^= a;
+        // add if bit-0 of b is 1
+        if (b & 1) ans ^= A;
 
         // shift to account for place value of bits in b
-        a <<= 1;
+        A <<= 1;
 
         // reduce if block goes outside the field
-        if (a & 0x100) a ^= IRR;
+        if (A & 0x100) A ^= IRR;
 
         // shift to get next bit to bit 0
         b >>= 1;
@@ -341,8 +383,8 @@ void expand_key(byte expanded_key[],byte key[]){
 
 // Debugging use
 
-void print_block(const byte block[16]){
-    for(int i=0; i<16; i++){
+void print_bytes(const byte block[], int len){
+    for(int i=0; i<len; i++){
         cout << hex << (int)(block[i]);
     }
     cout << endl;
