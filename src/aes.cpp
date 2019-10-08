@@ -7,83 +7,81 @@
 using namespace std;
 
 void encrypt(byte plain_text[], int plain_text_size);
-void decrypt(byte cipher_text[], int cipher_text_size);
+void decrypt(byte cipher_text[], int &cipher_text_size);
 
 // AES Layers
-void sub_bytes(byte[], int);
+void sub_bytes(byte[], int len=16);
 void shift_rows(byte[16]);
 void mix_cols(byte[16]);
-void add_key(byte[], byte[]);
+void add_key(byte[], byte[], bool reset=false);
 
-void inv_sub_bytes(byte[], int);
+void inv_sub_bytes(byte[], int len=16);
 void inv_shift_rows(byte[16]);
 void inv_mix_cols(byte[16]);
-void inv_add_key(byte[], byte[]);
+void inv_add_key(byte[], byte[], bool reset=false);
 
 // Helper
 byte gf2_mul(byte,byte);
 uint32_t g(const uint32_t&);
 void expand_key(byte expanded_key[],byte key[]); // Key schedule
-void stob(byte[], char[], int len, int start);
-void mov(byte target[], byte src[], int elements, int target_start, int src_start);
-void eor(byte target[], byte src[], int elements, int target_start, int src_start);
+void stob(byte[], char[], int len);
+void mov(byte target[], byte src[], int elements);
+void eor(byte target[], byte src[], int elements);
 
 // Debuging use
-void print_bytes(const byte[], int);
+void print_bytes(const byte[], int, bool raw=false);
 
 // Globals
 int key_size;
-byte expanded_key[240]; // makes space assuming 256-bit key
-bool is_cbc;
+byte expanded_key[256]; // makes space assuming 256-bit key
+bool do_cbc;
 byte IV[16];
+
+// Corrected writing overflowing in expand_key(), similar overflowing in add_key() (round needed to be reset)
 
 int main(int argc, char** argv){
 
-    // Test: aes -e 128 2b7e151628aed2a6abf7158809cf4f3c 3243f6a8885a308d313198a2e0370734
-    if (argc == 5 || argc == 6){
+    if (argc == 6 || argc == 7){
 
         // Encrypt or decrypt flag
-        bool flag_e = argv[1][1] == 'e';
+        bool raw = argv[1][1] == 'r';
+        bool flag_e = argv[2][1] == 'e';
 
         // check CBC
-        is_cbc = (argc == 6);
-        if (is_cbc) stob(IV, argv[4], 16, 0);
+        do_cbc = (argc == 7);
+        if (do_cbc && flag_e) stob(IV, argv[5], 16);
 
         // Get key and expand it.
-        key_size = atoi(argv[2]);
+        key_size = atoi(argv[3]);
 
         byte key[key_size/8];
-        stob(key, argv[3], key_size/8, 0);
+        stob(key, argv[4], key_size/8);
 
         expand_key(expanded_key, key);
 
         // Get text
-        char* text_str = is_cbc ? argv[5] : argv[4];
-        long long text_size = strlen(text_str)/2 + (is_cbc ? 16 : 0);
+        char* text_str = do_cbc ? argv[6] : argv[5];
+        int text_size = strlen(text_str)/2 + ((do_cbc && flag_e) ? 16 : 0);
 
         byte text[text_size];
-        stob(text, text_str, text_size, is_cbc?16:0);
+        stob(&text[(do_cbc && flag_e)?16:0], text_str, text_size);
 
         // Process
         if (flag_e){
-
             encrypt(text, text_size);
-            print_bytes(text, text_size);
-            decrypt(text, text_size);
-            print_bytes(text, text_size);
+            print_bytes(text, text_size, raw);
 
         } else {
 
             decrypt(text, text_size);
-            print_bytes(text, text_size);
-
+            print_bytes(&text[(do_cbc?16:0)], text_size - (do_cbc?16:0), raw);
         }
 
     } else {
-        cout << "Please use (ECB mode): aes <-e/-d> <128/192/256> <key> <text>" << endl;
-        cout << "or" << endl;
-        cout << "Please use (CBC mode): aes <-e/-d> <128/192/256> <key> <IV> <text>" << endl;
-        cout << "Note, for decryption Iv may be 0 or anything non-empty"<< endl;
+        cerr << "Please use (ECB mode): aes <-r/-f> <-e/-d> <128/192/256> <key> <text>" << endl;
+        cerr << "or" << endl;
+        cerr << "Please use (CBC mode): aes <-r/-f> <-e/-d> <128/192/256> <key> <IV> <text>" << endl;
+        cerr << "Note, for decryption IV may be 0 or anything non-empty"<< endl;
         exit(1);
     }
 
@@ -93,68 +91,62 @@ int main(int argc, char** argv){
 void encrypt(byte plain_text[], int plain_text_size){
 
     byte Rounds = key_size/32 + 7;  // no. of round
-    if (is_cbc) mov(plain_text, IV, 16, 0, 0);
+    if (do_cbc) mov(plain_text, IV, 16);
 
-    for(int block=(is_cbc?16:0); block<plain_text_size; block+=16){
 
-        if (is_cbc) eor(plain_text, IV, 16, block, 0);
+    for(int block=(do_cbc?16:0); block<plain_text_size; block+=16){
+
+        if (do_cbc) eor(&plain_text[block], &plain_text[block-16], 16);
 
         // key whitening
-        add_key(expanded_key, &plain_text[block]);
+        add_key(expanded_key, &plain_text[block], true); // Also reset rounds to 0
 
         for(int round=1; round<Rounds-1; round++){
 
-            sub_bytes(&plain_text[block], 16);
+            sub_bytes(&plain_text[block]);
             shift_rows(&plain_text[block]);
             mix_cols(&plain_text[block]);
             add_key(expanded_key, &plain_text[block]);
         }
 
         // Last Round
-        sub_bytes(&plain_text[block], 16);
+        sub_bytes(&plain_text[block]);
         shift_rows(&plain_text[block]);
         add_key(expanded_key, &plain_text[block]);
-
-        if (is_cbc) mov(IV, plain_text, 16, 0, block);
 
     }
 
 }
 
 void decrypt(byte cipher_text[], int &cipher_text_size){
-    // IGNORE first block if is_cbc, since it was IV
+    // IGNORE first block if do_cbc, since it was IV
 
     byte Rounds = key_size/32 + 7;  // no. of round
 
-    for(int block=(is_cbc?16:0); block<cipher_text_size; block+=16){
-
+    for(int block=cipher_text_size-16; block>=(do_cbc?16:0); block-=16){
         // First decryption round
-        inv_add_key(expanded_key, &cipher_text[block]);
+        inv_add_key(expanded_key, &cipher_text[block], true); // Also reset rounds for this block
         inv_shift_rows(&cipher_text[block]);
-        inv_sub_bytes(&cipher_text[block], 16);
+        inv_sub_bytes(&cipher_text[block]);
 
         for(int round=1; round<Rounds-1; round++){
 
             inv_add_key(expanded_key, &cipher_text[block]);
             inv_mix_cols(&cipher_text[block]);
             inv_shift_rows(&cipher_text[block]);
-            inv_sub_bytes(&cipher_text[block], 16);
+            inv_sub_bytes(&cipher_text[block]);
         }
 
         // decrypt key whitening
         inv_add_key(expanded_key, &cipher_text[block]);
 
-        if (is_cbc) eor(cipher_text, cipher_text, 16, block, block-16);
-
+        if (do_cbc) eor(&cipher_text[block], &cipher_text[block-16], 16);
     }
-
-    cipher_text_size -=16;
 }
-
 
 // AES Layers
 
-void sub_bytes(byte block[], int len=16){
+void sub_bytes(byte block[], int len){
 
     static byte sbox[] = {0x63,0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f,
         0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, 0xca,
@@ -229,15 +221,14 @@ void mix_cols(byte block[16]){
     }
 }
 
-void add_key(byte expanded_key[],byte block[]){
-    static byte round = 0;
-    for (int i=0; i<16; i++){
-        block[i] ^= expanded_key[16*round+i];
-    }
+void add_key(byte expanded_key[],byte block[], bool reset){
+    static byte round;
+    if (reset) round = 0;
+    eor(block, &expanded_key[16*round],16);
     round++;
 }
 
-void inv_sub_bytes(byte block[], int len=16){
+void inv_sub_bytes(byte block[], int len){
 
     static byte inv_sbox[] = {0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5,
         0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb, 0x7c, 0xe3,
@@ -297,11 +288,10 @@ void inv_mix_cols(byte block[16]){
     }
 }
 
-void inv_add_key(byte expanded_key[],byte block[]){
-    static byte round = key_size/32+6;
-    for (int i=0; i<16; i++){
-        block[i] ^= expanded_key[16*round+i];
-    }
+void inv_add_key(byte expanded_key[],byte block[], bool reset){
+    static byte round;
+    if (reset) round = key_size/32+6;
+    eor(block, &expanded_key[16*round],16);
     round--;
 }
 
@@ -367,14 +357,15 @@ void expand_key(byte expanded_key[],byte key[]){
     bool key256 = (key_size == 256);
     byte N = key_size / 32; // length of key in 4-byte words
     byte R = N+7;  // no. of round keys needed
-    static uint32_t* W = (uint32_t*) expanded_key;
+    byte key_rounds = R*4/N;
+    uint32_t* W = (uint32_t*) expanded_key;
 
     // copy the key, round 0
     for(byte i=0; i<N; i++){
         W[i] = *(uint32_t*) (&key[4*i]);
     }
 
-    for(byte round=1; round<R; round++){
+    for(byte round=1; round<key_rounds+1; round++){
         // denotes start/0 position for the round
         byte i = round*N;
 
@@ -394,35 +385,35 @@ void expand_key(byte expanded_key[],byte key[]){
     }
 }
 
-void stob(byte target[], char src[], int len, int target_start){
+void stob(byte target[], char src[], int len){
     for (int i=0; i<len; i++){
 
         char temp[2] = {src[2*i], src[2*i+1]};
 
         if (temp[0] == '\0' || temp[1] == '\0') break;
 
-        target[target_start+i] = stoi(temp, nullptr, 16);
+        target[i] = stoi(temp, nullptr, 16);
     }
 }
 
-void mov(byte target[], byte src[], int elements, int target_start, int src_start){
+void mov(byte target[], byte src[], int elements){
     for (int i=0; i<elements; i++){
-        target[target_start+i] = src[src_start+i];
+        target[i] = src[i];
     }
 }
 
-void eor(byte target[], byte src[], int elements, int target_start, int src_start){
+void eor(byte target[], byte src[], int elements){
     for (int i=0; i<elements; i++){
-        target[target_start+i] ^= src[src_start+i];
+        target[i] ^= src[i];
     }
 }
 
 
 // Debugging use
 
-void print_bytes(const byte block[], int len){
+void print_bytes(const byte block[], int len, bool raw){
     for(int i=0; i<len; i++){
         cout << hex << (block[i]<16 ? "0" : "") << (int)(block[i]);
     }
-    cout << endl;
+    if (!raw) cout << endl;
 }

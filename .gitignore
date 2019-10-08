@@ -1,2 +1,6 @@
 /.vscode
 *.exe
+*.pyc
+**/__pycache__/
+/.venv/
+*.bat
