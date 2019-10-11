@@ -1,94 +1,13 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
-
-#define byte uint8_t
+#include "aes.h"
 
 using namespace std;
 
-void encrypt(byte plain_text[], int plain_text_size);
-void decrypt(byte cipher_text[], int &cipher_text_size);
-
-// AES Layers
-void sub_bytes(byte[], int len=16);
-void shift_rows(byte[16]);
-void mix_cols(byte[16]);
-void add_key(byte[], byte[], bool reset=false);
-
-void inv_sub_bytes(byte[], int len=16);
-void inv_shift_rows(byte[16]);
-void inv_mix_cols(byte[16]);
-void inv_add_key(byte[], byte[], bool reset=false);
-
-// Helper
-byte gf2_mul(byte,byte);
-uint32_t g(const uint32_t&);
-void expand_key(byte expanded_key[],byte key[]); // Key schedule
-void stob(byte[], char[], int len);
-void mov(byte target[], byte src[], int elements);
-void eor(byte target[], byte src[], int elements);
-
-// Debuging use
-void print_bytes(const byte[], int, bool raw=false);
-
-// Globals
-int key_size;
-byte expanded_key[256]; // makes space assuming 256-bit key
-bool do_cbc;
-byte IV[16];
-
 // Corrected writing overflowing in expand_key(), similar overflowing in add_key() (round needed to be reset)
 
-int main(int argc, char** argv){
-
-    if (argc == 6 || argc == 7){
-
-        // Encrypt or decrypt flag
-        bool raw = argv[1][1] == 'r';
-        bool flag_e = argv[2][1] == 'e';
-
-        // check CBC
-        do_cbc = (argc == 7);
-        if (do_cbc && flag_e) stob(IV, argv[5], 16);
-
-        // Get key and expand it.
-        key_size = atoi(argv[3]);
-
-        byte key[key_size/8];
-        stob(key, argv[4], key_size/8);
-
-        expand_key(expanded_key, key);
-
-        // Get text
-        char* text_str = do_cbc ? argv[6] : argv[5];
-        int text_size = strlen(text_str)/2 + ((do_cbc && flag_e) ? 16 : 0);
-
-        byte text[text_size];
-        stob(&text[(do_cbc && flag_e)?16:0], text_str, text_size);
-
-        // Process
-        if (flag_e){
-            encrypt(text, text_size);
-            print_bytes(text, text_size, raw);
-
-        } else {
-
-            decrypt(text, text_size);
-            print_bytes(&text[(do_cbc?16:0)], text_size - (do_cbc?16:0), raw);
-        }
-
-    } else {
-        cerr << "Please use (ECB mode): aes <-r/-f> <-e/-d> <128/192/256> <key> <text>" << endl;
-        cerr << "or" << endl;
-        cerr << "Please use (CBC mode): aes <-r/-f> <-e/-d> <128/192/256> <key> <IV> <text>" << endl;
-        cerr << "Note, for decryption IV may be 0 or anything non-empty"<< endl;
-        exit(1);
-    }
-
-    return 0;
-}
-
-void encrypt(byte plain_text[], int plain_text_size){
+void encrypt(byte plain_text[16], int plain_text_size){
 
     byte Rounds = key_size/32 + 7;  // no. of round
     if (do_cbc) mov(plain_text, IV, 16);
@@ -118,7 +37,7 @@ void encrypt(byte plain_text[], int plain_text_size){
 
 }
 
-void decrypt(byte cipher_text[], int &cipher_text_size){
+void decrypt(byte cipher_text[], int cipher_text_size){
     // IGNORE first block if do_cbc, since it was IV
 
     byte Rounds = key_size/32 + 7;  // no. of round
