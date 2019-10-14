@@ -1,5 +1,4 @@
 #include <iostream>
-#include <fstream>
 #include <cstring>
 #include "aes.h"
 
@@ -7,60 +6,52 @@ using namespace std;
 
 // Corrected writing overflowing in expand_key(), similar overflowing in add_key() (round needed to be reset)
 
-void encrypt(byte plain_text[16], int plain_text_size){
+void encrypt_block(byte block[16], int plain_text_size, bool do_cbc, byte IV[16]){
 
     byte Rounds = key_size/32 + 7;  // no. of round
-    if (do_cbc) mov(plain_text, IV, 16);
 
+    if (do_cbc) eor(block, IV, 16);
 
-    for(int block=(do_cbc?16:0); block<plain_text_size; block+=16){
+    // key whitening
+    add_key(expanded_key, block, true); // Also reset rounds to 0
 
-        if (do_cbc) eor(&plain_text[block], &plain_text[block-16], 16);
+    for(int round=1; round<Rounds-1; round++){
 
-        // key whitening
-        add_key(expanded_key, &plain_text[block], true); // Also reset rounds to 0
-
-        for(int round=1; round<Rounds-1; round++){
-
-            sub_bytes(&plain_text[block]);
-            shift_rows(&plain_text[block]);
-            mix_cols(&plain_text[block]);
-            add_key(expanded_key, &plain_text[block]);
-        }
-
-        // Last Round
-        sub_bytes(&plain_text[block]);
-        shift_rows(&plain_text[block]);
-        add_key(expanded_key, &plain_text[block]);
-
+        sub_bytes(block);
+        shift_rows(block);
+        mix_cols(block);
+        add_key(expanded_key, block);
     }
+
+    // Last Round
+    sub_bytes(block);
+    shift_rows(block);
+    add_key(expanded_key, block);
 
 }
 
-void decrypt(byte cipher_text[], int cipher_text_size){
+void decrypt_block(byte block[], int cipher_text_size, bool do_cbc, byte IV[16]){
     // IGNORE first block if do_cbc, since it was IV
 
     byte Rounds = key_size/32 + 7;  // no. of round
 
-    for(int block=cipher_text_size-16; block>=(do_cbc?16:0); block-=16){
-        // First decryption round
-        inv_add_key(expanded_key, &cipher_text[block], true); // Also reset rounds for this block
-        inv_shift_rows(&cipher_text[block]);
-        inv_sub_bytes(&cipher_text[block]);
+    // First decryption round
+    inv_add_key(expanded_key, block, true); // Also reset rounds for this block
+    inv_shift_rows(block);
+    inv_sub_bytes(block);
 
-        for(int round=1; round<Rounds-1; round++){
+    for(int round=1; round<Rounds-1; round++){
 
-            inv_add_key(expanded_key, &cipher_text[block]);
-            inv_mix_cols(&cipher_text[block]);
-            inv_shift_rows(&cipher_text[block]);
-            inv_sub_bytes(&cipher_text[block]);
-        }
-
-        // decrypt key whitening
-        inv_add_key(expanded_key, &cipher_text[block]);
-
-        if (do_cbc) eor(&cipher_text[block], &cipher_text[block-16], 16);
+        inv_add_key(expanded_key, block);
+        inv_mix_cols(block);
+        inv_shift_rows(block);
+        inv_sub_bytes(block);
     }
+
+    // decrypt key whitening
+    inv_add_key(expanded_key, block);
+
+    if (do_cbc) eor(block, IV, 16);
 }
 
 // AES Layers

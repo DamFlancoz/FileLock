@@ -3,8 +3,8 @@
 #define byte uint8_t
 
 
-void encrypt(byte plain_text[], int plain_text_size);
-void decrypt(byte cipher_text[], int cipher_text_size);
+void encrypt_block(byte plain_text[], int plain_text_size, bool do_cbc=false, byte IV[16]=nullptr);
+void decrypt_block(byte cipher_text[], int cipher_text_size, bool do_cbc=false, byte IV[16]=nullptr);
 
 // AES Layers
 void sub_bytes(byte[], int len=16);
@@ -31,5 +31,3 @@ void print_bytes(const byte[], int, bool raw=false);
 // Globals
 int key_size;
 byte expanded_key[256]; // makes space assuming 256-bit key
-bool do_cbc;
-byte IV[16];
