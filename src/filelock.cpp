@@ -6,17 +6,13 @@
 
 using namespace std;
 
-void encrypt(fstream &file, const bool do_cbc, byte IV[16]);
-void decrypt(fstream &file, const bool do_cbc, byte IV[16]);
+void encrypt(fstream &file, const int file_size, const bool do_cbc, byte IV[16]);
+void decrypt(fstream &file, const int file_size, const bool do_cbc, byte IV[16]);
 
-void load_next_block(fstream &file, const int pos);
-void write_block(fstream &file, const int pos);
+void load_block(fstream &file, char block_str[], const int pos, const int size);
+void write_block(fstream &file, char block_str[], const int pos, const int size);
 
 // Globals
-static union {
-    byte block[BLOCK_SIZE];
-    char block_str[BLOCK_SIZE];
-};
 
 int main(int argc, char* argv[]){
 
@@ -33,9 +29,9 @@ int main(int argc, char* argv[]){
     const bool flag_e = argv[1][1] == 'e';
 
     // check CBC
-    bool do_cbc = (argc == 6);
-    byte IV[16];
-    if (do_cbc && flag_e) stob(IV, argv[4], 16);
+    const bool do_cbc = (argc == 6);
+    byte IV[BLOCK_SIZE];
+    if (do_cbc) stob(IV, argv[4], 16);
 
     // Get key and expand it.
     key_size = atoi(argv[2]);
@@ -44,6 +40,7 @@ int main(int argc, char* argv[]){
     stob(key, argv[3], key_size/8);
 
     expand_key(expanded_key, key);
+        print_bytes(key,key_size/8,0);
 
     // Get File
     const char* file_path = do_cbc ? argv[5] : argv[4];
@@ -60,43 +57,73 @@ int main(int argc, char* argv[]){
 
     // Process
     if (flag_e)
-        encrypt(file, do_cbc, IV);
-
+        encrypt(file, file_size, do_cbc, IV);
     else
-        decrypt(file, do_cbc, IV);
+        decrypt(file, file_size, do_cbc, IV);
 
 
     return 0;
 }
 
-void encrypt(fstream &file, const int file_size, const bool do_cbc, byte IV[16]){
+void encrypt(fstream &file, const int file_size, const bool do_cbc, byte IV[BLOCK_SIZE]){
+    union {
+        byte block[BLOCK_SIZE];
+        char block_str[BLOCK_SIZE];
+    };
 
-    for (int pos=0; pos<file_size-16; pos+=16){
-        load_next_block(file, pos);
-        encrypt_block(block, BLOCK_SIZE, do_cbc, IV);
-        write_block(file, pos);
+    byte _IV[BLOCK_SIZE];
+    if (do_cbc) mov(_IV, IV, BLOCK_SIZE);
 
-        if (do_cbc) mov(IV, block, 16);
+    for (int pos=0; pos<=file_size-BLOCK_SIZE; pos+=BLOCK_SIZE){
+        load_block(file, block_str, pos, BLOCK_SIZE);
+        print_bytes(block,BLOCK_SIZE,0);
+        encrypt_block(block, BLOCK_SIZE, do_cbc, _IV);
+        write_block(file, block_str, pos, BLOCK_SIZE);
+
+        print_bytes(block,BLOCK_SIZE,0);
+
+        if (do_cbc) mov(_IV, block, BLOCK_SIZE);
     } // append IV and padding info at end
+
+    cout << endl;
 
 }
 
-void decrypt(fstream &file, const int file_size, const bool do_cbc, byte IV[16]){
+void decrypt(fstream &file, const int file_size, const bool do_cbc, byte IV[BLOCK_SIZE]){
+    union {
+        byte block[BLOCK_SIZE];
+        char block_str[BLOCK_SIZE];
+    };
 
-    for (int pos=file_size-16; pos>=0; pos-=16){
-        load_next_block(file, pos);
-        encrypt_block(block, BLOCK_SIZE, do_cbc, IV);
-        write_block(file, pos);
+    union
+    {
+        byte _IV[BLOCK_SIZE];
+        char _IV_str[BLOCK_SIZE];
+    };
+
+    for (int pos=file_size-BLOCK_SIZE; pos>=0; pos-=BLOCK_SIZE){
+        if (pos == 0){
+            mov(_IV, IV, BLOCK_SIZE);
+        } else {
+            load_block(file, _IV_str, pos-BLOCK_SIZE, BLOCK_SIZE);
+        }
+
+        load_block(file, block_str, pos, BLOCK_SIZE);
+        print_bytes(block,BLOCK_SIZE,0);
+        decrypt_block(block, BLOCK_SIZE, do_cbc, _IV);
+        print_bytes(block,BLOCK_SIZE,0);
+        write_block(file, block_str, pos, BLOCK_SIZE);
+
     } // does not update IV
 
 }
 
-void load_next_block(fstream &file, const int pos){
+void load_block(fstream &file, char block_str[], const int pos, const int size){
     file.seekg(pos, ios::beg);
-    file.read(block_str, BLOCK_SIZE);
+    file.read(block_str, size);
 }
 
-void write_block(fstream &file, const int pos){
+void write_block(fstream &file, char block_str[], const int pos, const int size){
     file.seekg(pos, ios::beg);
-    file.write(block_str, BLOCK_SIZE);
+    file.write(block_str, size);
 }
