@@ -1,32 +1,33 @@
 #include <cstdint>
 
 #define byte uint8_t
+#define BLOCK_SIZE 16
 
 
-void encrypt_block(byte plain_text[], int plain_text_size, bool do_cbc=false, byte IV[16]=nullptr);
-void decrypt_block(byte cipher_text[], int cipher_text_size, bool do_cbc=false, byte IV[16]=nullptr);
+void encrypt_block(byte block[BLOCK_SIZE], const bool &do_cbc=false, const byte IV[BLOCK_SIZE]=nullptr);
+void decrypt_block(byte block[BLOCK_SIZE], const bool &do_cbc=false, const byte IV[BLOCK_SIZE]=nullptr);
 
 // AES Layers
-void sub_bytes(byte[], int len=16);
-void shift_rows(byte[16]);
-void mix_cols(byte[16]);
-void add_key(byte[], byte[], bool reset=false);
+void sub_bytes(byte[], const int &len=BLOCK_SIZE);
+void shift_rows(byte[BLOCK_SIZE]);
+void mix_cols(byte[BLOCK_SIZE]);
+void add_key(byte[], byte[BLOCK_SIZE], const bool &reset=false);
 
-void inv_sub_bytes(byte[], int len=16);
-void inv_shift_rows(byte[16]);
-void inv_mix_cols(byte[16]);
-void inv_add_key(byte[], byte[], bool reset=false);
+void inv_sub_bytes(byte[], const int &len=BLOCK_SIZE);
+void inv_shift_rows(byte[BLOCK_SIZE]);
+void inv_mix_cols(byte[BLOCK_SIZE]);
+void inv_add_key(byte[], byte[BLOCK_SIZE], const bool &reset=false);
 
 // Helper
-byte gf2_mul(byte,byte);
+byte gf2_mul(const byte&, const byte&);
 uint32_t g(const uint32_t&);
-void expand_key(byte expanded_key[],byte key[]); // Key schedule
-void stob(byte[], char[], int len);
-void mov(byte target[], byte src[], int elements);
-void eor(byte target[], byte src[], int elements);
+void expand_key(byte expanded_key[], const byte key[BLOCK_SIZE]); // Key schedule
+void stob(byte[], const char[], const int &len=BLOCK_SIZE);
+void mov(byte target[], const byte src[], const int &elements=BLOCK_SIZE);
+void eor(byte target[], const byte src[], const int &elements=BLOCK_SIZE);
 
 // Debuging use
-void print_bytes(const byte[], int, bool raw=false);
+void print_bytes(const byte[], const int &len=BLOCK_SIZE);
 
 // Globals
 int key_size;

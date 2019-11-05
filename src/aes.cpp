@@ -6,7 +6,7 @@ using namespace std;
 
 // Corrected writing overflowing in expand_key(), similar overflowing in add_key() (round needed to be reset)
 
-void encrypt_block(byte block[16], int plain_text_size, bool do_cbc, byte IV[16]){
+void encrypt_block(byte block[BLOCK_SIZE], const bool &do_cbc, const byte IV[16]){
 
     byte Rounds = key_size/32 + 7;  // no. of round
 
@@ -22,15 +22,13 @@ void encrypt_block(byte block[16], int plain_text_size, bool do_cbc, byte IV[16]
         mix_cols(block);
         add_key(expanded_key, block);
     }
-
     // Last Round
     sub_bytes(block);
     shift_rows(block);
     add_key(expanded_key, block);
-
 }
 
-void decrypt_block(byte block[], int cipher_text_size, bool do_cbc, byte IV[16]){
+void decrypt_block(byte block[BLOCK_SIZE], const bool &do_cbc, const byte IV[16]){
     // IGNORE first block if do_cbc, since it was IV
 
     byte Rounds = key_size/32 + 7;  // no. of round
@@ -56,7 +54,7 @@ void decrypt_block(byte block[], int cipher_text_size, bool do_cbc, byte IV[16])
 
 // AES Layers
 
-void sub_bytes(byte block[], int len){
+void sub_bytes(byte block[], const int &len){
 
     static byte sbox[] = {0x63,0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f,
         0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, 0xca,
@@ -90,7 +88,7 @@ void sub_bytes(byte block[], int len){
     }
 }
 
-void shift_rows(byte block[16]){
+void shift_rows(byte block[BLOCK_SIZE]){
     /*
     Here, consecutive bytes are stacked as columns instead of rows,
 
@@ -111,7 +109,7 @@ void shift_rows(byte block[16]){
     }
 }
 
-void mix_cols(byte block[16]){
+void mix_cols(byte block[BLOCK_SIZE]){
     byte temp[4];
     for(int c=0; c<16; c+=4 ){
 
@@ -131,14 +129,14 @@ void mix_cols(byte block[16]){
     }
 }
 
-void add_key(byte expanded_key[],byte block[], bool reset){
+void add_key(byte expanded_key[], byte block[BLOCK_SIZE], const bool &reset){
     static byte round;
     if (reset) round = 0;
     eor(block, &expanded_key[16*round],16);
     round++;
 }
 
-void inv_sub_bytes(byte block[], int len){
+void inv_sub_bytes(byte block[], const int &len){
 
     static byte inv_sbox[] = {0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5,
         0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb, 0x7c, 0xe3,
@@ -170,7 +168,7 @@ void inv_sub_bytes(byte block[], int len){
     }
 }
 
-void inv_shift_rows(byte block[16]){
+void inv_shift_rows(byte block[BLOCK_SIZE]){
     // see shift rows
     byte temp[16]={ block[0],block[13],block[10],block[7],
                     block[4],block[1],block[14],block[11],
@@ -182,7 +180,7 @@ void inv_shift_rows(byte block[16]){
     }
 }
 
-void inv_mix_cols(byte block[16]){
+void inv_mix_cols(byte block[BLOCK_SIZE]){
     byte temp[4];
     for(int c=0; c<16; c+=4 ){
 
@@ -198,7 +196,7 @@ void inv_mix_cols(byte block[16]){
     }
 }
 
-void inv_add_key(byte expanded_key[],byte block[], bool reset){
+void inv_add_key(byte expanded_key[], byte block[BLOCK_SIZE], const bool &reset){
     static byte round;
     if (reset) round = key_size/32+6;
     eor(block, &expanded_key[16*round],16);
@@ -209,20 +207,22 @@ void inv_add_key(byte expanded_key[],byte block[], bool reset){
 // Helper
 
 // GF(2^8) algebra
-byte gf2_mul(byte a, byte b){
+byte gf2_mul(const byte &a, const byte &b){
     // Multiplies terms of GF(2^8)
 
     // Irreducible polynomial for AES, x^8+ x^4 + x^3 + x + 1
     static const uint16_t IRR = 0b100011011; // 0x11b
-    uint16_t A = a;
+
+    uint16_t A = a; // to handle more than 8-bit intermediate values
+    byte B = b;
 
     byte ans = 0;
 
     // until b is 0
-    while(b){
+    while(B){
 
         // add if bit-0 of b is 1
-        if (b & 1) ans ^= A;
+        if (B & 1) ans ^= A;
 
         // shift to account for place value of bits in b
         A <<= 1;
@@ -231,14 +231,14 @@ byte gf2_mul(byte a, byte b){
         if (A & 0x100) A ^= IRR;
 
         // shift to get next bit to bit 0
-        b >>= 1;
+        B >>= 1;
     }
 
     return ans;
 }
 
 // For expand_key
-uint32_t g(const uint32_t& x){
+uint32_t g(const uint32_t &x){
 
     // round constant
     static byte rc = 1;
@@ -262,7 +262,7 @@ uint32_t g(const uint32_t& x){
     return *( (uint32_t*) temp );
 }
 
-void expand_key(byte expanded_key[],byte key[]){
+void expand_key(byte expanded_key[], const byte key[BLOCK_SIZE]){
 
     bool key256 = (key_size == 256);
     byte N = key_size / 32; // length of key in 4-byte words
@@ -295,7 +295,7 @@ void expand_key(byte expanded_key[],byte key[]){
     }
 }
 
-void stob(byte target[], char src[], int len){
+void stob(byte target[],const char src[],const int &len){
     for (int i=0; i<len; i++){
 
         char temp[2] = {src[2*i], src[2*i+1]};
@@ -306,13 +306,13 @@ void stob(byte target[], char src[], int len){
     }
 }
 
-void mov(byte target[], byte src[], int elements){
+void mov(byte target[], const byte src[], const int &elements){
     for (int i=0; i<elements; i++){
         target[i] = src[i];
     }
 }
 
-void eor(byte target[], byte src[], int elements){
+void eor(byte target[], const byte src[], const int &elements){
     for (int i=0; i<elements; i++){
         target[i] ^= src[i];
     }
@@ -321,9 +321,10 @@ void eor(byte target[], byte src[], int elements){
 
 // Debugging use
 
-void print_bytes(const byte block[], int len, bool raw){
+void print_bytes(const byte block[], const int &len){
     for(int i=0; i<len; i++){
         cout << hex << (block[i]<16 ? "0" : "") << (int)(block[i]);
+        if ((i+1)%4 == 0 && i!=1) cout << ' ';
     }
-    if (!raw) cout << endl;
+    cout << endl;
 }
