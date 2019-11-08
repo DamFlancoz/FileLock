@@ -326,5 +326,5 @@ void print_bytes(const byte block[], const int &len){
         cout << hex << (block[i]<16 ? "0" : "") << (int)(block[i]);
         if ((i+1)%4 == 0 && i!=1) cout << ' ';
     }
-    cout << endl;
+    cout << dec << endl;
 }
